@@ -11,7 +11,12 @@ import "reactflow/dist/style.css";
 import "./App.css";
 import ConfigPanel from "./components/ConfigPanel";
 import SimulationDashboard from "./components/SimulationDashboard";
-import ScenarioComparison from './components/ScenarioComparison';
+import ScenarioComparison from "./components/ScenarioComparison";
+import SavedNetworks from "./components/SavedNetworks";
+import FolderIcon from "@mui/icons-material/Folder";
+import ActionToolbar from "./components/ActionToolbar";
+import { ThemeProvider, CssBaseline } from "@mui/material";
+import { getTheme } from "./theme/theme";
 import {
   Button,
   Box,
@@ -23,23 +28,47 @@ import {
   IconButton,
   Tooltip,
   Chip,
+  Stack,
 } from "@mui/material";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import AddIcon from "@mui/icons-material/Add";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import SaveIcon from "@mui/icons-material/Save";
 import FileUploadIcon from "@mui/icons-material/FileUpload";
-import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
-import BookmarkIcon from '@mui/icons-material/Bookmark';
-import { Dialog, DialogTitle, DialogContent, DialogActions, TextField as MuiTextField } from '@mui/material';
+import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
+import BookmarkIcon from "@mui/icons-material/Bookmark";
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField as MuiTextField,
+} from "@mui/material";
 
 function App() {
+  const [themeMode, setThemeMode] = useState(() => {
+    const savedMode = localStorage.getItem("themeMode");
+    return savedMode || "light";
+  });
+  const toggleTheme = () => {
+    setThemeMode((prevMode) => {
+      const newMode = prevMode === "light" ? "dark" : "light";
+      localStorage.setItem("themeMode", newMode);
+      return newMode;
+    });
+  };
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState(null);
   const [simulationResults, setSimulationResults] = useState(null);
   const [isSimulating, setIsSimulating] = useState(false);
   const [demands, setDemands] = useState([]);
+  const [savedNetworks, setSavedNetworks] = useState([]);
+  const [showSavedNetworks, setShowSavedNetworks] = useState(false);
+  const [showSaveNetworkDialog, setShowSaveNetworkDialog] = useState(false);
+  const [currentNetworkName, setCurrentNetworkName] = useState("");
+  const [currentNetworkDescription, setCurrentNetworkDescription] =
+    useState("");
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
@@ -460,6 +489,77 @@ function App() {
     setShowComparisonView(!showComparisonView);
   };
 
+  const saveNetwork = () => {
+    if (nodes.length === 0) {
+      setSnackbar({
+        open: true,
+        message: "Create a network first!",
+        severity: "warning",
+      });
+      return;
+    }
+    setShowSaveNetworkDialog(true);
+  };
+
+  const confirmSaveNetwork = () => {
+    if (!currentNetworkName.trim()) {
+      setSnackbar({
+        open: true,
+        message: "Please enter a network name!",
+        severity: "warning",
+      });
+      return;
+    }
+
+    const network = {
+      id: `network_${Date.now()}`,
+      name: currentNetworkName,
+      description: currentNetworkDescription,
+      savedAt: new Date().toISOString(),
+      config: {
+        nodes: nodes,
+        edges: edges,
+        demands: demands,
+        simTime: simTime,
+      },
+    };
+
+    setSavedNetworks([...savedNetworks, network]);
+    setCurrentNetworkName("");
+    setCurrentNetworkDescription("");
+    setShowSaveNetworkDialog(false);
+    setSnackbar({
+      open: true,
+      message: `Network "${network.name}" saved!`,
+      severity: "success",
+    });
+  };
+
+  const loadNetwork = (network) => {
+    setNodes(network.config.nodes);
+    setEdges(network.config.edges);
+    setDemands(network.config.demands);
+    setSimTime(network.config.simTime);
+    setSelectedNode(null);
+    setSelectedEdge(null);
+    setSimulationResults(null);
+    setShowSavedNetworks(false);
+    setSnackbar({
+      open: true,
+      message: `Network "${network.name}" loaded!`,
+      severity: "success",
+    });
+  };
+
+  const deleteNetwork = (networkId) => {
+    setSavedNetworks(savedNetworks.filter((n) => n.id !== networkId));
+    setSnackbar({
+      open: true,
+      message: "Network deleted!",
+      severity: "info",
+    });
+  };
+
   const runSimulation = async () => {
     if (nodes.length === 0) {
       setSnackbar({
@@ -555,293 +655,233 @@ function App() {
     }
   };
 
+  const theme = React.useMemo(() => getTheme(themeMode), [themeMode]);
+
   return (
-    <Box
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100vh",
-        bgcolor: "#f5f7fa",
-      }}
-    >
-      <AppBar position="static" sx={{ bgcolor: "#1976d2" }}>
-        <Toolbar>
-          <Typography
-            variant="h5"
-            component="div"
-            sx={{ flexGrow: 1, fontWeight: 600 }}
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          height: "100vh",
+          bgcolor: "background.default",
+          transition: "background-color 0.3s ease",
+        }}
+      >
+        <ActionToolbar
+          onAddNode={addNode}
+          onAddDemand={addDemand}
+          onSaveConfig={saveConfiguration}
+          onLoadConfig={() =>
+            document.querySelector('input[type="file"]').click()
+          }
+          onSaveNetwork={saveNetwork}
+          onViewNetworks={() => setShowSavedNetworks(true)}
+          onSaveScenario={saveAsScenario}
+          onCompareScenarios={toggleComparisonView}
+          onRunSimulation={runSimulation}
+          onClearAll={clearAll}
+          simTime={simTime}
+          onSimTimeChange={setSimTime}
+          isSimulating={isSimulating}
+          hasResults={simulationResults !== null}
+          stats={{
+            nodes: nodes.length,
+            links: edges.length,
+            demands: demands.length,
+            savedNetworks: savedNetworks.length,
+            scenarios: scenarios.length,
+          }}
+          onMenuClick={(action) => {
+            console.log("Menu action:", action);
+          }}
+          themeMode={themeMode}
+          onThemeToggle={toggleTheme}
+        />
+
+        <input
+          type="file"
+          hidden
+          accept=".json"
+          onChange={loadConfiguration}
+          style={{ display: "none" }}
+        />
+
+        <Box sx={{ display: "flex", flex: 1, overflow: "hidden" }}>
+          <Box
+            sx={{
+              flex: 3,
+              position: "relative",
+              background:
+                themeMode === "light"
+                  ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+                  : "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
+              transition: "background 0.3s ease",
+            }}
           >
-            ⚡ SupplyNet Web
-          </Typography>
-
-          <Chip
-            label={`${nodes.length} Nodes`}
-            sx={{ mr: 1, bgcolor: "rgba(255,255,255,0.2)", color: "white" }}
-          />
-          <Chip
-            label={`${edges.length} Links`}
-            sx={{ mr: 1, bgcolor: "rgba(255,255,255,0.2)", color: "white" }}
-          />
-          <Chip
-            label={`${demands.length} Demands`}
-            sx={{ mr: 2, bgcolor: "rgba(255,255,255,0.2)", color: "white" }}
-          />
-
-          <Tooltip title="Add Supplier">
-            <Button
-              color="inherit"
-              startIcon={<AddIcon />}
-              onClick={() => addNode("supplier")}
-              sx={{ mr: 1 }}
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onNodeClick={onNodeClick}
+              onEdgeClick={onEdgeClick}
+              fitView
             >
-              Supplier
-            </Button>
-          </Tooltip>
-
-          <Tooltip title="Add Distributor">
-            <Button
-              color="inherit"
-              startIcon={<AddIcon />}
-              onClick={() => addNode("distributor")}
-              sx={{ mr: 1 }}
-            >
-              Distributor
-            </Button>
-          </Tooltip>
-
-          <Tooltip title="Add Demand">
-            <Button
-              color="inherit"
-              startIcon={<AddIcon />}
-              onClick={addDemand}
-              sx={{ mr: 1 }}
-            >
-              Demand
-            </Button>
-          </Tooltip>
-
-          <Tooltip title="Save Configuration">
-            <IconButton
-              color="inherit"
-              onClick={saveConfiguration}
-              sx={{ mr: 1 }}
-              disabled={nodes.length === 0}
-            >
-              <SaveIcon />
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title="Load Configuration">
-            <IconButton color="inherit" component="label" sx={{ mr: 1 }}>
-              <FileUploadIcon />
-              <input
-                type="file"
-                hidden
-                accept=".json"
-                onChange={loadConfiguration}
+              <Controls />
+              <MiniMap
+                nodeColor={(node) =>
+                  node.data.nodeType === "supplier" ? "#4CAF50" : "#2196F3"
+                }
+                maskColor="rgba(0, 0, 0, 0.1)"
               />
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title="Save as Scenario">
-            <IconButton
-              color="inherit"
-              onClick={saveAsScenario}
-              sx={{ mr: 1 }}
-              disabled={!simulationResults}
-            >
-              <BookmarkIcon />
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title={`Compare Scenarios (${scenarios.length})`}>
-            <IconButton
-              color="inherit"
-              onClick={toggleComparisonView}
-              sx={{ mr: 1 }}
-              disabled={scenarios.length === 0}
-            >
-              <CompareArrowsIcon />
-            </IconButton>
-          </Tooltip>
+              <Background variant="dots" gap={16} size={1} color="#ffffff33" />
+            </ReactFlow>
+          </Box>
 
           <Box
             sx={{
-              display: "flex",
-              alignItems: "center",
-              bgcolor: "rgba(255,255,255,0.15)",
-              borderRadius: 1,
-              px: 1.5,
-              py: 0.5,
-              mr: 2,
-              border: "1px solid rgba(255,255,255,0.3)",
+              flex: 1,
+              borderLeft: `2px solid`,
+              borderColor: "divider",
+              overflow: "auto",
+              bgcolor: "background.paper",
+              boxShadow: "-4px 0 20px rgba(0,0,0,0.1)",
+              transition: "all 0.3s ease",
             }}
           >
-            <Typography
-              variant="caption"
-              sx={{
-                color: "white",
-                mr: 1,
-                fontWeight: 600,
-                fontSize: "0.75rem",
-              }}
-            >
-              Days:
-            </Typography>
-            <input
-              type="number"
-              value={simTime}
-              onChange={(e) =>
-                setSimTime(Math.max(1, parseInt(e.target.value) || 1))
-              }
-              min="1"
-              max="365"
-              style={{
-                width: "50px",
-                background: "transparent",
-                border: "none",
-                color: "white",
-                fontSize: "14px",
-                fontWeight: 700,
-                textAlign: "center",
-                outline: "none",
-              }}
+            <ConfigPanel
+              selectedNode={selectedNode}
+              updateNodeData={updateNodeData}
+              selectedEdge={selectedEdge}
+              updateEdgeData={updateEdgeData}
+              demands={demands}
+              updateDemand={updateDemand}
+              deleteDemand={deleteDemand}
+              nodes={nodes}
             />
           </Box>
+        </Box>
 
-          <Tooltip title="Clear All">
-            <IconButton color="inherit" onClick={clearAll} sx={{ mr: 1 }}>
-              <RestartAltIcon />
-            </IconButton>
-          </Tooltip>
-
-          <Button
-            variant="contained"
-            color="success"
-            startIcon={isSimulating ? null : <PlayArrowIcon />}
-            onClick={runSimulation}
-            disabled={isSimulating}
-            sx={{
-              bgcolor: "#4caf50",
-              "&:hover": { bgcolor: "#45a049" },
-              fontWeight: 600,
-            }}
-          >
-            {isSimulating ? "Running..." : "Run Simulation"}
-          </Button>
-        </Toolbar>
-      </AppBar>
-
-      <Box sx={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        <Box
-          sx={{
-            flex: 3,
-            position: "relative",
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-          }}
-        >
-          <ReactFlow
+        {simulationResults && (
+          <SimulationDashboard
+            results={simulationResults}
             nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onNodeClick={onNodeClick}
-            onEdgeClick={onEdgeClick}
-            fitView
-          >
-            <Controls />
-            <MiniMap
-              nodeColor={(node) =>
-                node.data.nodeType === "supplier" ? "#4CAF50" : "#2196F3"
-              }
-              maskColor="rgba(0, 0, 0, 0.1)"
+            onClose={() => setSimulationResults(null)}
+            onExport={exportResultsCSV}
+          />
+        )}
+
+        {showComparisonView && (
+          <ScenarioComparison
+            scenarios={scenarios}
+            onClose={() => setShowComparisonView(false)}
+            onDelete={deleteScenario}
+            onLoad={loadScenario}
+          />
+        )}
+        {showSavedNetworks && (
+          <SavedNetworks
+            savedNetworks={savedNetworks}
+            onClose={() => setShowSavedNetworks(false)}
+            onLoadNetwork={loadNetwork}
+            onDeleteNetwork={deleteNetwork}
+          />
+        )}
+
+        <Dialog
+          open={showScenarioDialog}
+          onClose={() => setShowScenarioDialog(false)}
+        >
+          <DialogTitle>Save Scenario</DialogTitle>
+          <DialogContent>
+            <MuiTextField
+              autoFocus
+              margin="dense"
+              label="Scenario Name"
+              fullWidth
+              variant="outlined"
+              value={currentScenarioName}
+              onChange={(e) => setCurrentScenarioName(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === "Enter") {
+                  confirmSaveScenario();
+                }
+              }}
             />
-            <Background variant="dots" gap={16} size={1} color="#ffffff33" />
-          </ReactFlow>
-        </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setShowScenarioDialog(false)}>Cancel</Button>
+            <Button
+              onClick={confirmSaveScenario}
+              variant="contained"
+              color="primary"
+            >
+              Save
+            </Button>
+          </DialogActions>
+        </Dialog>
 
-        <Box
-          sx={{
-            flex: 1,
-            borderLeft: "2px solid #e0e0e0",
-            overflow: "auto",
-            background: "white",
-            boxShadow: "-4px 0 20px rgba(0,0,0,0.1)",
-          }}
+        <Dialog
+          open={showSaveNetworkDialog}
+          onClose={() => setShowSaveNetworkDialog(false)}
         >
-          <ConfigPanel
-            selectedNode={selectedNode}
-            updateNodeData={updateNodeData}
-            selectedEdge={selectedEdge}
-            updateEdgeData={updateEdgeData}
-            demands={demands}
-            updateDemand={updateDemand}
-            deleteDemand={deleteDemand}
-            nodes={nodes}
-          />
-        </Box>
-      </Box>
+          <DialogTitle>Save Network</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ mt: 1, minWidth: 400 }}>
+              <MuiTextField
+                autoFocus
+                label="Network Name"
+                fullWidth
+                variant="outlined"
+                value={currentNetworkName}
+                onChange={(e) => setCurrentNetworkName(e.target.value)}
+                placeholder="e.g., Q4 Supply Chain Model"
+              />
+              <MuiTextField
+                label="Description (Optional)"
+                fullWidth
+                variant="outlined"
+                multiline
+                rows={3}
+                value={currentNetworkDescription}
+                onChange={(e) => setCurrentNetworkDescription(e.target.value)}
+                placeholder="Brief description of the network"
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setShowSaveNetworkDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmSaveNetwork}
+              variant="contained"
+              color="primary"
+            >
+              Save Network
+            </Button>
+          </DialogActions>
+        </Dialog>
 
-      {simulationResults && (
-        <SimulationDashboard
-          results={simulationResults}
-          nodes={nodes}
-          onClose={() => setSimulationResults(null)}
-          onExport={exportResultsCSV}
-        />
-      )}
-
-      {showComparisonView && (
-        <ScenarioComparison
-          scenarios={scenarios}
-          onClose={() => setShowComparisonView(false)}
-          onDelete={deleteScenario}
-          onLoad={loadScenario}
-        />
-      )}
-
-      <Dialog open={showScenarioDialog} onClose={() => setShowScenarioDialog(false)}>
-        <DialogTitle>Save Scenario</DialogTitle>
-        <DialogContent>
-          <MuiTextField
-            autoFocus
-            margin="dense"
-            label="Scenario Name"
-            fullWidth
-            variant="outlined"
-            value={currentScenarioName}
-            onChange={(e) => setCurrentScenarioName(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter') {
-                confirmSaveScenario();
-              }
-            }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowScenarioDialog(false)}>Cancel</Button>
-          <Button onClick={confirmSaveScenario} variant="contained" color="primary">
-            Save
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={4000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-      >
-        <Alert
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={4000}
           onClose={() => setSnackbar({ ...snackbar, open: false })}
-          severity={snackbar.severity}
-          sx={{ width: "100%" }}
+          anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
         >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+          <Alert
+            onClose={() => setSnackbar({ ...snackbar, open: false })}
+            severity={snackbar.severity}
+            sx={{ width: "100%" }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
+      </Box>
+    </ThemeProvider>
   );
 }
 

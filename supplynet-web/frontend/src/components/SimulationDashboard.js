@@ -470,7 +470,7 @@ function SimulationDashboard({ results, nodes, onClose, onExport }) {
                     icon={<LocalShippingIcon fontSize="small" />}
                     label="Total Links" 
                     value={metrics.num_of_links}
-                    color="#3b82f6"
+                    color="#424247"
                   />
                   <Divider />
                   <MetricRow 
