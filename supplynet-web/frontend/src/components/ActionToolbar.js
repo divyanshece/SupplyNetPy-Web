@@ -99,7 +99,7 @@ function ActionToolbar({
           transition: 'all 0.3s ease',
         }}
       >
-        SupplyNet
+        SupplyNet-Web
       </Typography>
 
       <Divider orientation="vertical" flexItem />
