@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react'
+import axios from 'axios'
 import ReactFlow, {
   addEdge,
   Background,
@@ -71,6 +72,7 @@ function MainApp() {
   const [simulationResults, setSimulationResults] = useState(null)
   const [isSimulating, setIsSimulating] = useState(false)
   const [simTime, setSimTime] = useState(30)
+  const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000'
 
   // Scenarios
   const [scenarios, setScenarios] = useState([])
@@ -575,109 +577,41 @@ function MainApp() {
 
   // Simulation
   const runSimulation = async () => {
+    setIsSimulating(true)
     try {
-      const validation = validateNetwork(nodes, edges, demands)
+      console.log('Starting simulation...')
 
-      if (!validation.isValid) {
-        setValidationResults(validation)
-        setShowValidation(true)
+      const response = await axios.post(`${API_BASE_URL}/simulate`, {
+        // ← Changed from /api/simulate
+        nodes: nodes,
+        links: edges,
+        demands: demands,
+        sim_time: simTime,
+      })
+
+      console.log('Simulation response:', response.data)
+      console.log('Inventory data:', response.data.inventory_data) // ← ADD THIS
+      console.log('Inventory data keys:', Object.keys(response.data.inventory_data || {})) // ← ADD THIS
+
+      if (response.data.success) {
+        setSimulationResults(response.data)
         setSnackbar({
           open: true,
-          message: 'Please fix errors before running simulation',
-          severity: 'error',
+          message: 'Simulation completed successfully!',
+          severity: 'success',
         })
-        return
+      } else {
+        throw new Error(response.data.error || 'Simulation failed')
       }
-
-      setIsLoading(true)
-      setLoadingMessage('Running simulation...')
-      setIsSimulating(true)
-
-      const networkConfig = {
-        nodes: nodes.map(node => ({
-          id: node.id,
-          name: node.data.label,
-          type: node.data.nodeType,
-          capacity: node.data.capacity || 1000,
-          initial_level: node.data.initial_level || 1000,
-          holding_cost: node.data.holding_cost || 0.22,
-          replenishment_policy: node.data.replenishment_policy || 'SS',
-          policy_s: node.data.policy_s || 400,
-          policy_S: node.data.policy_S || 1000,
-          policy_R: node.data.policy_R || 1000,
-          policy_Q: node.data.policy_Q || 500,
-          buy_price: node.data.buy_price || 150,
-          sell_price: node.data.sell_price || 300,
-          position: {
-            x: node.position.x,
-            y: node.position.y,
-          },
-        })),
-        links: edges.map(edge => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          cost: edge.data?.cost || 10,
-          lead_time: edge.data?.lead_time || 5,
-        })),
-        demands: demands.map(demand => ({
-          id: demand.id,
-          name: demand.name,
-          target_node: demand.target_node,
-          arrival_interval: demand.arrival_interval || 1,
-          order_quantity: demand.order_quantity || 400,
-          delivery_cost: demand.delivery_cost || 10,
-          lead_time: demand.lead_time || 5,
-        })),
-        sim_time: simTime || 30,
-      }
-
-      const response = await fetch('http://localhost:8000/api/simulate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(networkConfig),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.detail || errorData.error || `Server error: ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      if (!data.success) {
-        throw new Error(data.error || 'Simulation failed')
-      }
-
-      setSimulationResults(data)
-
-      // Save results to database
-      if (currentNetworkId) {
-        await supabase.from('simulation_results').insert({
-          network_id: currentNetworkId,
-          user_id: user.id,
-          sim_time: simTime,
-          metrics: data.metrics,
-          inventory_data: data.inventory_data,
-        })
-      }
-
-      setSnackbar({
-        open: true,
-        message: 'Simulation completed successfully!',
-        severity: 'success',
-      })
     } catch (error) {
       console.error('Simulation error:', error)
       setSnackbar({
         open: true,
-        message: error.message || 'Simulation failed. Please check your configuration.',
+        message: `Simulation failed: ${error.response?.data?.detail || error.message}`,
         severity: 'error',
       })
     } finally {
-      setIsLoading(false)
       setIsSimulating(false)
-      setLoadingMessage('')
     }
   }
 
