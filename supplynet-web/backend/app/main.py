@@ -51,16 +51,16 @@ class LinkConfig(BaseModel):
     source: str
     target: str
     cost: float = 10
-    lead_time: float = 5  # Changed to float for decimals
+    lead_time: float = 5
 
 class DemandConfig(BaseModel):
     id: str
     name: str
     target_node: str
-    arrival_interval: float = 1  # Changed to float for decimals
+    arrival_interval: float = 1
     order_quantity: int = 400
     delivery_cost: float = 10
-    lead_time: float = 5  # Changed to float for decimals
+    lead_time: float = 5
 
 class SimulationRequest(BaseModel):
     nodes: List[NodeConfig]
@@ -73,6 +73,15 @@ class SimulationResponse(BaseModel):
     metrics: Optional[Dict[str, Any]] = None
     inventory_data: Optional[Dict[str, Dict[str, List]]] = None
     error: Optional[str] = None
+
+# ============ Helper Functions for Lambda Closures ============
+
+def make_constant_lambda(value):
+    """
+    Create a lambda that properly captures the value.
+    This is the FIX for the lambda closure problem!
+    """
+    return lambda: value
 
 # ============ API Endpoints ============
 
@@ -99,7 +108,7 @@ async def health_check():
             "error": str(e)
         }
 
-@app.post("/simulate", response_model=SimulationResponse)
+@app.post("/api/simulate", response_model=SimulationResponse)
 async def run_simulation(config: SimulationRequest):
     """
     Run a supply chain simulation based on the provided configuration
@@ -122,6 +131,8 @@ async def run_simulation(config: SimulationRequest):
         
         # STEP 1: Create all nodes
         for node_config in config.nodes:
+            print(f"\n📦 Creating node: {node_config.name} ({node_config.type})")
+            
             if node_config.type == "supplier":
                 node = core.Supplier(
                     env=env,
@@ -130,70 +141,100 @@ async def run_simulation(config: SimulationRequest):
                     node_type="infinite_supplier"
                 )
                 node_objects[node_config.id] = node
+                print(f"   ✅ Supplier created: {node_config.name}")
                 
             elif node_config.type == "distributor":
+                # Get actual values with defaults
+                capacity = node_config.capacity if node_config.capacity is not None else 1000
+                initial_level = node_config.initial_level if node_config.initial_level is not None else 1000
+                holding_cost = node_config.holding_cost if node_config.holding_cost is not None else 0.22
+                buy_price = node_config.buy_price if node_config.buy_price is not None else 150
+                sell_price = node_config.sell_price if node_config.sell_price is not None else 300
+                
                 # Determine replenishment policy
                 if node_config.replenishment_policy == "SS":
                     policy = core.SSReplenishment
+                    policy_s = node_config.policy_s if node_config.policy_s is not None else 400
+                    policy_S = node_config.policy_S if node_config.policy_S is not None else 1000
                     policy_param = {
-                        's': node_config.policy_s or 400,
-                        'S': node_config.policy_S or 1000
+                        's': policy_s,
+                        'S': policy_S
                     }
+                    print(f"   📋 Policy: (s,S) with s={policy_s}, S={policy_S}")
                 else:  # RQ
                     policy = core.RQReplenishment
+                    policy_R = node_config.policy_R if node_config.policy_R is not None else 1000
+                    policy_Q = node_config.policy_Q if node_config.policy_Q is not None else 500
                     policy_param = {
-                        'R': node_config.policy_R or 1000,
-                        'Q': node_config.policy_Q or 500
+                        'R': policy_R,
+                        'Q': policy_Q
                     }
+                    print(f"   📋 Policy: (R,Q) with R={policy_R}, Q={policy_Q}")
+                
+                print(f"   📊 Capacity: {capacity}, Initial: {initial_level}")
+                print(f"   💰 Buy: ${buy_price}, Sell: ${sell_price}, Holding: ${holding_cost}")
                 
                 node = core.InventoryNode(
                     env=env,
                     ID=node_config.id,
                     name=node_config.name,
                     node_type="distributor",
-                    capacity=node_config.capacity or 1000,
-                    initial_level=node_config.initial_level or 1000,
-                    inventory_holding_cost=node_config.holding_cost,
+                    capacity=capacity,
+                    initial_level=initial_level,
+                    inventory_holding_cost=holding_cost,
                     replenishment_policy=policy,
                     policy_param=policy_param,
-                    product_buy_price=node_config.buy_price,
-                    product_sell_price=node_config.sell_price
+                    product_buy_price=buy_price,
+                    product_sell_price=sell_price
                 )
                 node_objects[node_config.id] = node
+                print(f"   ✅ Distributor created: {node_config.name}")
         
         # STEP 2: Create all links
         for link_config in config.links:
             if link_config.source not in node_objects or link_config.target not in node_objects:
-                raise HTTPException(status_code=400, detail=f"Invalid link: {link_config.source} -> {link_config.target}")
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid link: {link_config.source} -> {link_config.target}"
+                )
             
+            # CRITICAL FIX: Use helper function to create proper closure
             link = core.Link(
                 env=env,
                 ID=link_config.id,
                 source=node_objects[link_config.source],
                 sink=node_objects[link_config.target],
                 cost=link_config.cost,
-                lead_time=lambda lt=link_config.lead_time: lt
+                lead_time=make_constant_lambda(link_config.lead_time)
             )
             link_objects.append(link)
+            print(f"🔗 Link created: {link_config.source} -> {link_config.target} (cost: ${link_config.cost}, lead_time: {link_config.lead_time}d)")
         
         # STEP 3: Create demands
         for demand_config in config.demands:
             if demand_config.target_node not in node_objects:
-                raise HTTPException(status_code=400, detail=f"Invalid demand target: {demand_config.target_node}")
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid demand target: {demand_config.target_node}"
+                )
             
+            # CRITICAL FIX: Use helper function for all lambdas
             demand = core.Demand(
                 env=env,
                 ID=demand_config.id,
                 name=demand_config.name,
-                order_arrival_model=lambda interval=demand_config.arrival_interval: interval,
-                order_quantity_model=lambda qty=demand_config.order_quantity: qty,
-                delivery_cost=lambda cost=demand_config.delivery_cost: cost,
-                lead_time=lambda lt=demand_config.lead_time: lt,
+                order_arrival_model=make_constant_lambda(demand_config.arrival_interval),
+                order_quantity_model=make_constant_lambda(demand_config.order_quantity),
+                delivery_cost=make_constant_lambda(demand_config.delivery_cost),
+                lead_time=make_constant_lambda(demand_config.lead_time),
                 demand_node=node_objects[demand_config.target_node]
             )
             demand_objects.append(demand)
+            print(f"📬 Demand created: {demand_config.name} -> {demand_config.target_node}")
+            print(f"   Interval: {demand_config.arrival_interval}d, Qty: {demand_config.order_quantity} units")
         
         # STEP 4: Create supply chain network
+        print("\n🏗️  Building supply chain network...")
         supplynet = utilities.create_sc_net(
             env=env,
             nodes=list(node_objects.values()),
@@ -202,6 +243,7 @@ async def run_simulation(config: SimulationRequest):
         )
         
         # STEP 5: Run simulation
+        print(f"\n▶️  Running simulation for {config.sim_time} days...")
         supplynet = utilities.simulate_sc_net(supplynet, sim_time=config.sim_time, logging=False)
         
         print("✅ Simulation completed successfully")
@@ -258,6 +300,11 @@ async def run_simulation(config: SimulationRequest):
             "num_manufacturers": supplynet.get('num_manufacturers', 0),
             "num_retailers": supplynet.get('num_retailers', 0),
         }
+        
+        print(f"\n📊 Results:")
+        print(f"   Profit: ${metrics['profit']:.2f}")
+        print(f"   Revenue: ${metrics['revenue']:.2f}")
+        print(f"   Total Cost: ${metrics['total_cost']:.2f}")
         
         return SimulationResponse(
             success=True,
