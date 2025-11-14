@@ -65,15 +65,41 @@ export const AuthProvider = ({ children }) => {
 
   const signOut = async () => {
     try {
-      await supabase.auth.signOut()
-      // Clear any stored data
+      // Try graceful logout first
+      try {
+        await supabase.auth.signOut({ scope: 'local' })
+      } catch (supabaseError) {
+        console.warn('Supabase logout failed, forcing local cleanup:', supabaseError)
+      }
+
+      // Force complete cleanup
+      localStorage.removeItem('supabase.auth.token')
       localStorage.removeItem('redirectAfterLogin')
-      // User will be set to null by the auth state change listener
+      localStorage.clear()
+      sessionStorage.clear()
+
+      // Clear cookies (if any)
+      document.cookie.split(';').forEach(c => {
+        document.cookie = c
+          .replace(/^ +/, '')
+          .replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/')
+      })
+
+      // Set user to null
+      setUser(null)
+
+      return { success: true }
     } catch (error) {
-      console.error('Error signing out:', error)
+      console.error('Critical logout error:', error)
+
+      // Last resort - force everything
+      localStorage.clear()
+      sessionStorage.clear()
+      setUser(null)
+
+      return { success: false, error }
     }
   }
-
   const resetPassword = async email => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,

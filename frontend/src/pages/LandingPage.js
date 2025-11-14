@@ -61,10 +61,20 @@ const LandingPage = () => {
   }
 
   const handleLogout = async () => {
+  try {
     await signOut()
     handleMenuClose()
-    navigate('/')
+    
+    // Force navigation after logout
+    window.location.href = '/'
+  } catch (error) {
+    console.error('Logout error:', error)
+    // Force cleanup and redirect anyway
+    localStorage.clear()
+    sessionStorage.clear()
+    window.location.href = '/'
   }
+}
 
   const handleGoToApp = () => {
     handleMenuClose()

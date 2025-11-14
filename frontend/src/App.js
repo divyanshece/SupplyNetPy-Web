@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react'
+import React, { useState, useCallback, useEffect, useMemo, useSearchParams } from 'react'
 import axios from 'axios'
 import ReactFlow, {
   addEdge,
@@ -9,7 +9,7 @@ import ReactFlow, {
   useEdgesState,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
-import { Box, Snackbar, Alert } from '@mui/material'
+import { Box, Snackbar, Alert, Typography } from '@mui/material'
 import { ThemeProvider, CssBaseline } from '@mui/material'
 import { getTheme } from './theme/theme'
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
@@ -32,10 +32,49 @@ import ScenarioComparison from './components/ScenarioComparison'
 
 
 
+
 // Pages
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import LandingPage from './pages/LandingPage';
+
+function AuthCallback() {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const { supabase } = useAuth()
+
+  useEffect(() => {
+    const handleCallback = async () => {
+      const token_hash = searchParams.get('token_hash')
+      const type = searchParams.get('type')
+
+      if (token_hash && type) {
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash,
+          type,
+        })
+
+        if (error) {
+          console.error('Error confirming email:', error)
+          navigate('/login?error=confirmation_failed')
+        } else {
+          // Successfully confirmed
+          navigate('/app?confirmed=true')
+        }
+      } else {
+        navigate('/login')
+      }
+    }
+
+    handleCallback()
+  }, [searchParams, navigate, supabase])
+
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <Typography>Confirming your email...</Typography>
+    </Box>
+  )
+}
 
 
 function MainApp() {
@@ -1135,6 +1174,7 @@ function App() {
       {/* Auth Routes */}
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/auth/confirm" element={<AuthCallback />} />
       
       {/* Main App - Protected */}
       <Route

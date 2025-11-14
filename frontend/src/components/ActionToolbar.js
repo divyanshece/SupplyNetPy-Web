@@ -14,6 +14,7 @@ import {
   Avatar,
   Stack,
   useTheme,
+  AccountTree as NetworkIcon,
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import StorefrontIcon from '@mui/icons-material/Storefront'
@@ -41,6 +42,7 @@ import InventoryIcon from '@mui/icons-material/Inventory'
 import PersonIcon from '@mui/icons-material/Person'
 import ClearIcon from '@mui/icons-material/Clear'
 import { useNavigate } from 'react-router-dom'
+
 
 function ActionToolbar({
   onAddNode,
@@ -669,6 +671,7 @@ function ActionToolbar({
           onClick={() => {
             setUserMenuAnchor(null)
             onMenuClick('logout')
+            
           }}
           sx={{ py: 1.5 }}
         >
